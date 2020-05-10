@@ -130,21 +130,25 @@ class Charger(BTBase):
 class Monitor(BTBase):
     @property
     def _monitor(self):
-        return self._bt_api._monitor(self.device_id).get('monitor', {})
+      #return self._bt_api._monitor(self.device_id).get('monitor', {})
+      return self._bt_api._monitor(self.device_id)
 
     @property
     def current(self):
         c = self._bt_api._monitor(self.device_id)
 
-        if not c:
-            return {}
-
-        if 'date' in c and 'id' in c and 'soc' in c and 'voltage' in c:
-            return {'date': c['date'],
-                    'id': c['id'],
-                    'soc': c['soc'],
-                    'voltage': c['voltage']}
-
+        if not c: return {}
+        
+        history = self.history
+        if len(history) > 0:
+          last = history[-1]
+          return {'date': last['date'],
+                  'id': last['id'],
+                  'soc': last['soc'],
+                  'voltage': last['voltage']}
+        else:
+          return {}
+        
         return {}
 
     @property
@@ -153,11 +157,16 @@ class Monitor(BTBase):
 
     @property
     def updated(self):
-        return self._monitor.get('updated')
+        return self.current.get('date')
 
     @property
     def name(self):
         return self._monitor.get('name')
+
+    @property
+    def location(self):
+        location = self._bt_api._locations[self._monitor.get('locationId')]
+        return location.get('name')
 
     @property
     def history(self):
@@ -169,16 +178,19 @@ class Monitor(BTBase):
 
     @property
     def soc(self):
-        return self._bt_api._monitor(self.device_id).get('soc')
+      return self.current.get('soc')
 
     @property
     def voltage(self):
-        return self._bt_api._monitor(self.device_id).get('voltage')
+      return self.current.get('voltage')
 
 
 class BatteryTender(object):
     def __init__(self, email, password, cache_ttl=600):
         self._cache_ttl = cache_ttl
+
+        self._locations = {}
+        self._locations[-1] = {'model': '', 'name': 'No Where', 'type': 0, 'trim': '', 'id': -1, 'make': '', 'year': 2000}
 
         self._charger_cache = ttldict.TTLOrderedDict(self._cache_ttl)
         self._chargers_cache = ttldict.TTLOrderedDict(self._cache_ttl)
@@ -198,6 +210,9 @@ class BatteryTender(object):
             return parsed
 
         def callback(data):
+            for location in data.get('locations', []):
+              self._locations[location['id']] = location
+
             for monitor in data.get('monitors', []):
                 if 'deviceId' not in monitor:
                     continue
@@ -278,8 +293,10 @@ class BatteryTender(object):
 
     def _monitor(self, device_id):
         if device_id not in self._monitor_cache.keys():
-            monitor = self._request('GET', MONITOR_PATH,
-                                    params={'monitorId': device_id})
+            if 0:
+              monitor = self._request('GET', MONITOR_PATH,
+                                      params={'monitorId': device_id})
+            monitor = self._monitors_cache.get(device_id, {})
             self._monitor_cache[device_id] = self._prepare_monitor(monitor)
 
         return self._monitor_cache.get(device_id)
